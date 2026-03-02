@@ -789,17 +789,17 @@ static bool tensor_requires_imatrix(const char * tensor_name, const ggml_type ds
 // given a file type, get the default tensor type
 //
 
-ggml_type llama_ftype_get_default_type(llama_ftype ftype) {
-    switch (ftype) {
-        case LLAMA_FTYPE_MOSTLY_Q4_0: return GGML_TYPE_Q4_0;
-        case LLAMA_FTYPE_MOSTLY_Q4_1: return GGML_TYPE_Q4_1;
-        case LLAMA_FTYPE_MOSTLY_Q5_0: return GGML_TYPE_Q5_0;
-        case LLAMA_FTYPE_MOSTLY_Q5_1: return GGML_TYPE_Q5_1;
-        case LLAMA_FTYPE_MOSTLY_Q8_0: return GGML_TYPE_Q8_0;
-        case LLAMA_FTYPE_MOSTLY_F16:  return GGML_TYPE_F16;
-        case LLAMA_FTYPE_MOSTLY_BF16: return GGML_TYPE_BF16;
-        case LLAMA_FTYPE_ALL_F32:     return GGML_TYPE_F32;
-        case LLAMA_FTYPE_MOSTLY_Q1_0: return GGML_TYPE_Q1_0;
+    switch (params->ftype) {
+        case LLAMA_FTYPE_MOSTLY_Q1_0: default_type = GGML_TYPE_Q1_0; break;
+        case LLAMA_FTYPE_MOSTLY_Q1_0_g128: default_type = GGML_TYPE_Q1_0_g128; break;
+        case LLAMA_FTYPE_MOSTLY_Q4_0: default_type = GGML_TYPE_Q4_0; break;
+        case LLAMA_FTYPE_MOSTLY_Q4_1: default_type = GGML_TYPE_Q4_1; break;
+        case LLAMA_FTYPE_MOSTLY_Q5_0: default_type = GGML_TYPE_Q5_0; break;
+        case LLAMA_FTYPE_MOSTLY_Q5_1: default_type = GGML_TYPE_Q5_1; break;
+        case LLAMA_FTYPE_MOSTLY_Q8_0: default_type = GGML_TYPE_Q8_0; break;
+        case LLAMA_FTYPE_MOSTLY_F16:  default_type = GGML_TYPE_F16;  break;
+        case LLAMA_FTYPE_MOSTLY_BF16: default_type = GGML_TYPE_BF16; break;
+        case LLAMA_FTYPE_ALL_F32:     default_type = GGML_TYPE_F32;  break;
 
         case LLAMA_FTYPE_MOSTLY_MXFP4_MOE: return GGML_TYPE_MXFP4;
 
