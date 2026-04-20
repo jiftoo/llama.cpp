@@ -699,6 +699,46 @@ struct gguf_context * gguf_init_from_file_ptr(FILE * file, struct gguf_init_para
     }
     GGML_ASSERT(int64_t(ctx->info.size()) == n_tensors);
 
+    // Backward compatibility for legacy Q1 GGUFs produced before NVFP4 occupied type id 40.
+    // Legacy mapping used: Q1_0 = 40, Q1_0_g128 = 41.
+    // Current mapping uses: NVFP4 = 40, Q1_0 = 41, Q1_0_g128 = 42.
+    {
+        const int64_t file_type_idx = gguf_find_key(ctx, "general.file_type");
+        const bool has_file_type = file_type_idx >= 0 && gguf_get_kv_type(ctx, file_type_idx) == GGUF_TYPE_UINT32;
+        const uint32_t file_type = has_file_type ? gguf_get_val_u32(ctx, file_type_idx) : 0;
+
+        if (file_type == 41) { // LLAMA_FTYPE_MOSTLY_Q1_0_g128
+            bool has_current_q1_g128 = false;
+            bool has_legacy_q1_g128 = false;
+
+            for (const auto & info : ctx->info) {
+                has_current_q1_g128 = has_current_q1_g128 || info.t.type == GGML_TYPE_Q1_0_g128;
+                has_legacy_q1_g128 = has_legacy_q1_g128 || (int) info.t.type == 41;
+            }
+
+            if (has_legacy_q1_g128 && !has_current_q1_g128) {
+                GGML_LOG_WARN("%s: applying legacy Q1 tensor id remap (Q1_0=40, Q1_0_g128=41)\n", __func__);
+
+                for (auto & info : ctx->info) {
+                    if ((int) info.t.type == 40) {
+                        info.t.type = GGML_TYPE_Q1_0;
+                    } else if ((int) info.t.type == 41) {
+                        info.t.type = GGML_TYPE_Q1_0_g128;
+                    }
+
+                    const int64_t blck_size = ggml_blck_size(info.t.type);
+                    GGML_ASSERT(blck_size > 0 && info.t.ne[0] % blck_size == 0);
+
+                    info.t.nb[0] = ggml_type_size(info.t.type);
+                    info.t.nb[1] = info.t.nb[0] * (info.t.ne[0] / blck_size);
+                    for (int j = 2; j < GGML_MAX_DIMS; ++j) {
+                        info.t.nb[j] = info.t.nb[j - 1] * info.t.ne[j - 1];
+                    }
+                }
+            }
+        }
+    }
+
     // we require the data section to be aligned, so take into account any padding
     if (gguf_fseek(file, GGML_PAD(gguf_ftell(file), ctx->alignment), SEEK_SET) != 0) {
         GGML_LOG_ERROR("%s: failed to seek to beginning of data section\n", __func__);

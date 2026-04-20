@@ -137,8 +137,34 @@ void quantize_row_q8_K(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, in
 
 //===================================== Dot products =================================
 
-void ggml_vec_dot_q1_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
-    const int qk = QK1_0;  // 128
+void ggml_vec_dot_q1_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {    
+    // For nrc > 1, call generic multiple times
+    if (nrc == 1) {
+        ggml_vec_dot_q1_0_q8_0_generic(n, s, bs, vx, bx, vy, by, nrc);
+    } else {
+        // Handle multiple rows by calling generic for each
+        const int qk = QK8_0;
+        const int nb = n / qk;
+        const size_t x_size = nb * sizeof(block_q1_0);
+        const size_t y_size = nb * sizeof(block_q8_0);
+        
+        for (int i = 0; i < nrc; i++) {
+            ggml_vec_dot_q1_0_q8_0_generic(
+                n,
+                s + i,
+                bs,
+                (const char *)vx + i * x_size,
+                bx,
+                (const char *)vy + i * y_size,
+                by,
+                1
+            );
+        }
+    }
+}
+
+void ggml_vec_dot_q1_0_g128_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
+    const int qk = QK1_0_g128;  // 128
     const int nb = n / qk;
 
     assert(n % qk == 0);
@@ -148,12 +174,23 @@ void ggml_vec_dot_q1_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const voi
     UNUSED(by);
     UNUSED(bs);
 
-    const block_q1_0 * GGML_RESTRICT x = vx;
+    const block_q1_0_g128 * GGML_RESTRICT x = vx;
     const block_q8_0 * GGML_RESTRICT y = vy;
 
     float sumf = 0.0f;
 
 #if defined(__ARM_NEON)
+    // Process one Q1_0_g128 block at a time
+    // Each block has 128 1-bit values and needs 4 Q8_0 blocks (4 * 32 = 128)
+    //
+    // Strategy: For 1-bit quants, bit=1 means +1, bit=0 means -1
+    // dot_product = sum(xi * yi) where xi is +1 or -1
+    //             = sum_where_bit_1(yi) - sum_where_bit_0(yi)
+    //             = 2 * sum_where_bit_1(yi) - sum_all(yi)
+    //
+    // We use the lookup table approach: expand each byte of bits to 8 bytes
+    // where each byte is either 0x00 (bit=0) or 0x10 (bit=1), then use as mask
+
     float32x4_t sumv = vdupq_n_f32(0.0f);
 
     for (int i = 0; i < nb; i++) {
